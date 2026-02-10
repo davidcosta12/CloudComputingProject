@@ -1,0 +1,33 @@
+
+@startuml
+
+participant Storage as "Azure Blob Storage (raw/)"
+participant ADF as "Azure Data Factory (Pipeline)"
+participant DF as "Data Flow (Transformation)"
+participant FA as "Azure Function App"
+participant Teams as "Microsoft Teams"
+
+Storage -> ADF: 1. Blob Created Event (Trigger)
+activate ADF
+
+ADF -> DF: 2. Execute ETL Logic
+activate DF
+
+DF -> DF: 3. Calculate Aggregates (total_kwh, count)
+DF -> DF: 4. Structure JSON Records
+
+DF -> Storage: 5. Write Latest State (latest/)
+DF -> Storage: 6. Write History (by-timestamp/YYYY-MM-DD_HHmmssSSS/)
+deactivate DF
+
+ADF -> FA: 7. Web Activity: Call Function (POST)
+activate FA
+
+FA -> Teams: 8. Send Incoming Webhook ([SUCESSO or Failure - ETLPipeline])
+FA --> ADF: 9. Success Response
+deactivate FA
+
+ADF --> Storage: 10. Pipeline Finished
+deactivate ADF
+
+@enduml

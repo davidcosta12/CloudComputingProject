@@ -1,0 +1,52 @@
+@startuml
+!pragma layout smetana
+skinparam shadowing false
+skinparam nodesep 100
+skinparam ranksep 80
+
+actor Admin
+actor User
+
+package "Authentication" {
+    component "AWS Cognito" as Cognito
+}
+
+package "Client" {
+    component "Frontend" as FE
+}
+
+package "Backend Services" {
+    frame "Backend" {
+        component "/api/data" as apiData
+    }
+}
+
+package "Data Layer" {
+    frame "Storage" {
+        database "processed"
+    }
+}
+
+' Relacionamentos de Acesso
+Admin -- FE : Access
+User -- FE : Access
+
+' Fluxo de Autenticação (Ajustado para o lado)
+FE -up-> Cognito : 1. Login
+' A seta 2 agora entra pela esquerda para não bater na seta 5
+Cognito -[#black]le-> FE : 2. JWT token w/\nrole + device_id
+
+' Fluxo de Dados
+FE -right-> apiData : 3. HTTPS Request\nw/ JWT Token
+apiData -right-> processed : 4. Download files
+
+' O retorno 5 agora entra por baixo do Frontend
+apiData -[#black]down-> FE : 5. Return profile (role +\ndevice_id) and data
+
+' Nota explicativa
+note bottom of "Backend Services"
+  <color:darkgreen>**Case 1 (Admin)** -> download all files and return</color>
+  <color:darkgreen>**Case 2 (User + device_id)** -> Download only files for assigned device_id</color>
+end note
+
+@enduml

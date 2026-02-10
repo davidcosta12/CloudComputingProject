@@ -1,0 +1,74 @@
+@startuml
+
+title Dashboard Flow (React + AWS Cognito + API + Processed Data Container)
+
+participant UI as "React UI (Browser)"
+participant API as "Spring Boot API"
+
+box "Authentication (AWS Cognito OIDC)" #LightYellow
+participant Cognito as "AWS Cognito (Hosted UI / OIDC)"
+end box
+
+box "Data Layer" #LightBlue
+participant Processed as "Processed Data Container"
+end box
+
+== Login (OIDC Authorization Code Flow) ==
+UI -> Cognito: 1. Redirect to login (authorize)
+Cognito --> UI: 2. Redirect back to UI (authorization code)
+UI -> Cognito: 3. Token exchange (code -> tokens)
+Cognito --> UI: 4. Tokens issued (id_token / access_token)
+
+== Dashboard data request ==
+UI -> API: 5. CORS Preflight (OPTIONS /api/dashboard-data)\nOrigin: <ui-origin>\nAccess-Control-Request-Headers: Authorization
+API --> UI: 6. CORS OK (Allow-Origin + Allow-Headers: Authorization)
+
+UI -> API: 7. GET /api/dashboard-data\nAuthorization: Bearer <jwt>
+activate API
+
+API -> API: 8. Validate JWT (signature/issuer/audience)
+API -> API: 9. Extract claims + authorities/roles
+
+alt Admin user
+  API -> Processed: 10A. Fetch latest data (all devices)
+  activate Processed
+  Processed --> API: 11A. latest[]
+  deactivate Processed
+
+  API -> Processed: 12A. Fetch historical data (all devices)
+  activate Processed
+  Processed --> API: 13A. historical[]
+  deactivate Processed
+
+  API --> UI: 14A. 200 OK\n{ role: "admin", latest: [...], historical: [...] }
+
+else Standard user with device claim
+  API -> API: 10B. Extract device_id from token claims
+
+  API -> Processed: 11B. Fetch latest by device_id
+  activate Processed
+  Processed --> API: 12B. latest (0..1)
+  deactivate Processed
+
+  API -> Processed: 13B. Fetch historical by device_id
+  activate Processed
+  Processed --> API: 14B. historical[]
+  deactivate Processed
+
+  API --> UI: 15B. 200 OK\n{ role: "user", device_id: "...", latest: [...], historical: [...] }
+
+else Missing device claim
+  API --> UI: 16C. 403 Forbidden\nAccess denied (missing device claim)
+end
+
+deactivate API
+
+== UI rendering ==
+UI -> UI: 17. Transform API data for table + charts
+UI -> UI: 18. Render Dashboard components
+
+== Logout (OIDC) ==
+UI -> Cognito: 19. Logout redirect
+Cognito --> UI: 20. Redirect back to UI (post_logout_redirect_uri)
+
+@enduml

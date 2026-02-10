@@ -1,0 +1,28 @@
+@startuml
+
+participant UI as "Frontend NodeJS"
+participant API as "Backend SpringBoot"
+participant DB as "Azure PostgreSQL"
+
+UI -> API: 1. CORS Preflight Request (OPTIONS /api/auth/register)
+API --> UI: 2. CORS Response (Access-Control-Allow-Origin: *)
+
+UI -> API: 3. User Registration (POST /api/auth/register)
+activate API
+
+API -> API: 4. Request Validation + Password Hashing (BCrypt)
+
+API -> DB: 5. Check for Existing Username (SELECT)
+activate DB
+DB --> API: 6. Query Result (User does not exist)
+deactivate DB
+
+API -> DB: 7. Create New User (INSERT INTO users)
+activate DB
+DB --> API: 8. Success
+deactivate DB
+
+API --> UI: 9. Response HTTP 201 Created
+deactivate API
+
+@enduml
