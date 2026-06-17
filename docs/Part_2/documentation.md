@@ -19,7 +19,9 @@ The pipeline is designed to handle energy meter readings from multiple devices. 
 
 The Data Flow follows a "Fan-out" pattern to calculate aggregates and then joins them back to the granular records.
 
+![ETL pipeline sequence](Sequence-diagram.png)
 
+Source: [`Sequence-diagram.puml`](Sequence-diagram.puml).
 
 ### Transformation Steps:
 1. **Source (`source1`)**: Reads raw CSV files from the landing zone.

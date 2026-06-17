@@ -96,10 +96,13 @@ Secure Parts 1 and 2 with a cloud **Identity Provider**:
    └────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Rendered diagrams:
-- Architecture: [`docs/Part_3/arch-diagram.puml`](docs/Part_3/arch-diagram.puml)
-- Dashboard sequence: [`docs/Part_3/sequence-diagram.puml`](docs/Part_3/sequence-diagram.puml)
-- ETL data flow: [`docs/Part_2/Sequence-diagram.puml`](docs/Part_2/Sequence-diagram.puml)
+Rendered diagrams (PlantUML source `.puml` + rendered `.png` side by side):
+- Integrated architecture: [`docs/Part_3/arch-diagram.png`](docs/Part_3/arch-diagram.png) · [source](docs/Part_3/arch-diagram.puml)
+- Part 1 — CI/CD deployment: [`docs/cicd-sequence.png`](docs/cicd-sequence.png) · [source](docs/cicd-sequence.puml)
+- Part 2 — ETL pipeline: [`docs/Part_2/Sequence-diagram.png`](docs/Part_2/Sequence-diagram.png) · [source](docs/Part_2/Sequence-diagram.puml)
+- Part 3 — dashboard runtime: [`docs/Part_3/sequence-diagram.png`](docs/Part_3/sequence-diagram.png) · [source](docs/Part_3/sequence-diagram.puml)
+
+![Integrated architecture](docs/Part_3/arch-diagram.png)
 
 ### Component summary
 
@@ -289,10 +292,3 @@ The UI build bakes in `REACT_APP_API_URL=https://p3-api.azurewebsites.net`.
 | **DB connection fails** | Missing/incorrect `AZURE_DB_*` settings | Set them in Azure App Service → Configuration |
 
 ---
-
-## 9. Evaluation topics (quick reference)
-
-The briefs list concepts you may be asked about during evaluation:
-- **Part 1:** cloud service models (IaaS/PaaS/SaaS), REST basics, GitHub Actions, build vs release, env vars, CI/CD.
-- **Part 2:** ETL vs ELT, storage buckets + event triggers, serverless (cold start, scaling, limits), data transformation (JSON/CSV/Parquet).
-- **Part 3:** IAM (users/roles/policies), authN vs authZ, encryption at rest/in transit, secrets management, logging/monitoring, role separation.

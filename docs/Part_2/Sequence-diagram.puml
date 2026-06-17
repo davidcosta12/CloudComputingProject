@@ -1,33 +1,79 @@
-
 @startuml
+title Part 2 — ETL Pipeline (Azure Data Factory "p3-datafactory")
 
-participant Storage as "Azure Blob Storage (raw/)"
-participant ADF as "Azure Data Factory (Pipeline)"
-participant DF as "Data Flow (Transformation)"
-participant FA as "Azure Function App"
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Helvetica Neue"
+skinparam defaultFontSize 13
+skinparam roundCorner 10
+skinparam ArrowColor #34495E
+skinparam ArrowThickness 1.1
+skinparam sequence {
+  ParticipantBackgroundColor #0078D4
+  ParticipantBorderColor #005A9E
+  ParticipantFontColor #FFFFFF
+  ParticipantFontStyle bold
+  ActorBackgroundColor #34495E
+  ActorBorderColor #2C3E50
+  LifeLineBorderColor #B0BEC5
+  LifeLineBackgroundColor #E3F2FD
+  GroupBackgroundColor #ECEFF1
+  GroupBorderColor #90A4AE
+  GroupHeaderFontColor #2C3E50
+  DividerBackgroundColor #34495E
+  DividerFontColor #FFFFFF
+}
+
+actor "Data source\n(IoT export)" as Src
+
+box "Microsoft Azure" #E3F2FD
+  participant Blob as "Blob Storage\n(private)"
+  participant ADF as "Pipeline\np3ETLFunction"
+  participant DF as "Mapping Data Flow\ndataflow1"
+  participant Logic as "Logic App\n(HTTP webhook)"
+end box
+
 participant Teams as "Microsoft Teams"
 
-Storage -> ADF: 1. Blob Created Event (Trigger)
+Src -> Blob: 1. Upload raw CSV → raw/\n(device_id, timestamp, kwh, location)
+activate Blob
+Blob -> ADF: 2. Storage event trigger (blob created)
+deactivate Blob
 activate ADF
 
-ADF -> DF: 2. Execute ETL Logic
+ADF -> DF: 3. Execute data flow
 activate DF
+DF -> DF: 4. source1 — read raw CSV
+DF -> DF: 5. aggregate1 — group by device_id\n(total_kwh, count)
+DF -> DF: 6. join1 — join raw rows with aggregates
+DF -> DF: 7. aggregate2 — collect() readings into records[]
+DF -> DF: 8. derivedColumn1 — generation_timestamp +\ndynamic output paths
 
-DF -> DF: 3. Calculate Aggregates (total_kwh, count)
-DF -> DF: 4. Structure JSON Records
-
-DF -> Storage: 5. Write Latest State (latest/)
-DF -> Storage: 6. Write History (by-timestamp/YYYY-MM-DD_HHmmssSSS/)
+DF -> Blob: 9. Write latest/device-<id>.json  (overwrite)
+DF -> Blob: 10. Write by-timestamp/yyyy-MM-dd_HHmmssSSS/device-<id>.json  (history)
+DF --> ADF: 11. Data flow result (success / failure)
 deactivate DF
 
-ADF -> FA: 7. Web Activity: Call Function (POST)
-activate FA
+alt Success
+  ADF -> Logic: 12a. Web1 POST\n{"status":"SUCESSO","message":"Processamento concluido"}
+  activate Logic
+  Logic -> Teams: 13a. Post success card
+  Logic --> ADF: 14a. 200 OK
+  deactivate Logic
+else Failure
+  ADF -> Logic: 12b. Web2 POST\n{"status":"FALHA","message":"Falha na Transformação."}
+  activate Logic
+  Logic -> Teams: 13b. Post failure card
+  Logic --> ADF: 14b. 200 OK
+  deactivate Logic
+end
 
-FA -> Teams: 8. Send Incoming Webhook ([SUCESSO or Failure - ETLPipeline])
-FA --> ADF: 9. Success Response
-deactivate FA
-
-ADF --> Storage: 10. Pipeline Finished
 deactivate ADF
+
+note over Blob
+  One JSON file per device, per run:
+  • latest/      → current state (overwritten)
+  • by-timestamp/ → immutable history
+end note
 
 @enduml

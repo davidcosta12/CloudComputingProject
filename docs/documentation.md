@@ -88,3 +88,9 @@ Both services deploy automatically via **GitHub Actions** on every push to `main
 
 This satisfies the Part 1 requirement that every commit triggers an automatic build and
 deployment of both frontend and backend.
+
+### Deployment sequence
+
+![CI/CD deployment sequence](cicd-sequence.png)
+
+Source: [`cicd-sequence.puml`](cicd-sequence.puml).
