@@ -1,6 +1,12 @@
-# Architecture Documentation: Erasmus Cloud Computing
+# Part 3 — Security, IAM & Monitoring
 
-This document describes the current system architecture and the end-to-end flow between the **React UI**, the **Spring Boot API**, **AWS Cognito (OIDC)**, and the **Data Layer (Processed container)**.
+This document describes the secured system architecture and the end-to-end flow between the
+**React UI**, the **Spring Boot API**, **AWS Cognito (OIDC)**, and the **Data Layer**
+(processed readings). It is the deliverable for **Project Part 3**, which adds identity,
+role separation, and access control on top of Parts 1 and 2.
+
+For full credential setup (Cognito groups, the `custom:device_id` attribute, secrets), see
+[`../CONFIGURATION.md`](../CONFIGURATION.md).
 
 ---
 
@@ -9,20 +15,21 @@ This document describes the current system architecture and the end-to-end flow 
 The application is split into independently deployed components:
 
 - **Frontend (UI)**: React single-page app (SPA) running in the browser
-- **Backend (API)**: Spring Boot REST API
+- **Backend (API)**: Spring Boot REST API (OAuth2 resource server)
 - **Authentication**: AWS Cognito (OIDC Authorization Code flow)
-- **Data Layer**: ?Processed? container (the API reads dashboard data from here)
+- **Data Layer**: processed readings (`latest` + `historical`) the API returns
 
 ### Components Overview
 
 | Component | Technology | Purpose |
 |---|---|---|
 | **Frontend (UI)** | React | Renders dashboards, handles authentication redirects, calls the API with JWTs. |
-| **Backend (API)** | Spring Boot (Java) | Validates JWT, applies role-based logic, fetches data from the processed container, returns dashboard payload. |
-| **Auth (IdP)** | AWS Cognito (OIDC) | Issues tokens used by the UI and validated by the API. |
-| **Data Layer** | Processed container | Source of ?latest? and ?historical? processed readings returned by the API. |
+| **Backend (API)** | Spring Boot (Java) | Validates JWT, applies role-based logic, fetches processed data, returns the dashboard payload. |
+| **Auth (IdP)** | AWS Cognito (OIDC) | Issues tokens used by the UI and validated by the API (`cognito:groups` → role, `custom:device_id` → data filter). |
+| **Data Layer** | Processed readings | Source of `latest` and `historical` readings returned by the API. |
 
-> Note: The dashboard flow assumes **no traditional database** is used for dashboard reads; data is retrieved from the **processed container**.
+> Note: dashboard reads come from the processed readings stored for each device; role and
+> device scoping are enforced server-side from JWT claims.
 
 ---
 
@@ -44,7 +51,7 @@ The application is split into independently deployed components:
 
 ---
 
-## 3. Dashboard Flow (UI ? API)
+## 3. Dashboard Flow (UI → API)
 
 This section documents the full end-to-end flow for the **Dashboard**, aligned with the sequence diagram.
 
@@ -89,19 +96,19 @@ The API returns a consolidated JSON payload:
 
 ### 3.3 Backend Logic (aligned with diagram)
 
-1. **JWT validation**: verify signature/issuer/audience as configured.
-2. **Role check**:
-  - **Admin**: fetch ?latest? and ?historical? for all devices from the processed container.
-  - **Standard user**: extract `device_id` from token claims.
-    - If missing ? return **403 Forbidden**
-    - If present ? fetch ?latest? and ?historical? filtered by `device_id` from the processed container.
+1. **JWT validation**: verify signature/issuer against the Cognito JWKS.
+2. **Role check** (from the `cognito:groups` claim, mapped to `ROLE_Admin` / `ROLE_User`):
+  - **Admin**: fetch `latest` and `historical` for all devices.
+  - **Standard user**: extract `custom:device_id` from token claims.
+    - If missing → return **403 Forbidden**
+    - If present → fetch `latest` and `historical` filtered by that `device_id`.
 3. Return `200 OK` with the dashboard payload.
 
 ---
 
-### 3.4 Data Layer (Processed container)
+### 3.4 Data Layer (Processed readings)
 
-The API reads dashboard data from the **processed** container:
+The API reads dashboard data from the **processed** readings:
 - **Latest** readings (most recent per device)
 - **Historical** readings (time series)
 

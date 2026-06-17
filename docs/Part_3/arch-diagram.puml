@@ -1,52 +1,80 @@
 @startuml
 !pragma layout smetana
+title Integrated Architecture — App + ETL + Security + CI/CD
+
+skinparam backgroundColor #FFFFFF
 skinparam shadowing false
-skinparam nodesep 100
-skinparam ranksep 80
+skinparam defaultFontName "Helvetica Neue"
+skinparam defaultFontSize 13
+skinparam roundCorner 12
+skinparam ArrowColor #34495E
+skinparam ArrowThickness 1.1
+skinparam nodesep 35
+skinparam ranksep 55
+skinparam rectangle {
+  BorderColor #607D8B
+  FontColor #2C3E50
+}
+skinparam database {
+  BackgroundColor #FFF8E1
+  BorderColor #F9A825
+}
+skinparam actorStyle awesome
 
-actor Admin
-actor User
+actor "Admin" as Admin
+actor "User" as User
 
-package "Authentication" {
-    component "AWS Cognito" as Cognito
+' ---------------- GitHub ----------------
+rectangle "GitHub" #ECEFF1 {
+  rectangle "Repository (main)\n+ GitHub Actions\n(CI/CD)" as GH #CFD8DC
 }
 
-package "Client" {
-    component "Frontend" as FE
+' ---------------- AWS ----------------
+rectangle "AWS" #FFF3E0 {
+  rectangle "Cognito User Pool\neu-central-1_k4a9qUIbH\n• groups → role\n• custom:device_id" as Cognito #FFE0B2
 }
 
-package "Backend Services" {
-    frame "Backend" {
-        component "/api/data" as apiData
-    }
+' ---------------- Azure ----------------
+rectangle "Microsoft Azure" #E3F2FD {
+
+  rectangle "App Service: p3-ui\nReact SPA" as UI #BBDEFB
+  rectangle "App Service: p3-api\nSpring Boot (JWT resource server)" as API #BBDEFB
+  database "Azure PostgreSQL\nlatest_data / historical_data" as DB
+
+  rectangle "Blob Storage (private)\nraw/ · latest/ · by-timestamp/" as Blob #B3E5FC
+  rectangle "Data Factory: p3-datafactory\npipeline p3ETLFunction + dataflow1" as ADF #90CAF9
+  rectangle "Logic App\nHTTP webhook" as Logic #B3E5FC
 }
 
-package "Data Layer" {
-    frame "Storage" {
-        database "processed"
-    }
-}
+' ---------------- External SaaS ----------------
+rectangle "Microsoft Teams" as Teams #DCE7F7
 
-' Relacionamentos de Acesso
-Admin -- FE : Access
-User -- FE : Access
+' ===== Authentication & app flow =====
+Admin --> UI : HTTPS
+User  --> UI : HTTPS
+UI --> Cognito : 1. OIDC login (Auth Code)
+Cognito --> UI : 2. JWT (role + device_id)
+UI --> API : 3. GET /api/dashboard-data\nBearer JWT
+API ..> Cognito : 4. Validate JWT (JWKS / issuer)
+API --> DB : 5. Read (all devices | by device_id)
+API --> UI : 6. role + latest + historical
 
-' Fluxo de Autenticação (Ajustado para o lado)
-FE -up-> Cognito : 1. Login
-' A seta 2 agora entra pela esquerda para não bater na seta 5
-Cognito -[#black]le-> FE : 2. JWT token w/\nrole + device_id
+' ===== ETL flow =====
+Blob --> ADF : 7. Blob-created event (raw/)
+ADF --> Blob : 8. Write latest/ + by-timestamp/
+ADF --> Logic : 9. Web activity (SUCESSO / FALHA)
+Logic --> Teams : 10. Notify
+Blob ..> DB : processed readings loaded\nfor the API
 
-' Fluxo de Dados
-FE -right-> apiData : 3. HTTPS Request\nw/ JWT Token
-apiData -right-> processed : 4. Download files
+' ===== CI/CD =====
+GH ..> UI  : deploy (publish profile)
+GH ..> API : deploy (service principal)
 
-' O retorno 5 agora entra por baixo do Frontend
-apiData -[#black]down-> FE : 5. Return profile (role +\ndevice_id) and data
-
-' Nota explicativa
-note bottom of "Backend Services"
-  <color:darkgreen>**Case 1 (Admin)** -> download all files and return</color>
-  <color:darkgreen>**Case 2 (User + device_id)** -> Download only files for assigned device_id</color>
+note bottom of API
+  Role logic (from JWT claims):
+  • Admin → all devices
+  • User  → only custom:device_id
+  • missing device_id → 403 Forbidden
 end note
 
 @enduml

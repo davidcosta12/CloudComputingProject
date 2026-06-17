@@ -11,7 +11,7 @@ The pipeline is designed to handle energy meter readings from multiple devices. 
 * **Dynamic Partitioning**: Generates individual JSON files for each unique `device_id`.
 * **Immutable History**: Saves every execution in a unique timestamped folder (down to the millisecond) to prevent data loss or overwriting.
 * **Aggregated Summaries**: Includes total kWh and record counts directly in the output JSON.
-* **Automated Notifications**: Integrates with an **Azure Function App** to send success alerts to a **Microsoft Teams** channel.
+* **Automated Notifications**: A **Web activity** in the orchestration pipeline posts to a webhook (**Azure Logic App** → **Microsoft Teams**) with a separate branch for success and failure.
 
 ---
 
@@ -19,7 +19,9 @@ The pipeline is designed to handle energy meter readings from multiple devices. 
 
 The Data Flow follows a "Fan-out" pattern to calculate aggregates and then joins them back to the granular records.
 
+![ETL pipeline sequence](Sequence-diagram.png)
 
+Source: [`Sequence-diagram.puml`](Sequence-diagram.puml).
 
 ### Transformation Steps:
 1. **Source (`source1`)**: Reads raw CSV files from the landing zone.
@@ -37,12 +39,52 @@ The Data Flow follows a "Fan-out" pattern to calculate aggregates and then joins
 
 ---
 
-##  Notification Details
-**Format**: `[SUCESSO - <PipelineName>]`
-**Payload Example**:
-- **Message**: Processamento concluído
-- **Time**: 2025-12-27T15:29:08.9810262Z
+## Pipeline in Azure Data Factory (Screenshots)
 
+These screenshots are taken from the `p3-datafactory` Data Factory.
+
+### Data flow (`dataflow1`)
+
+The mapping data flow that transforms the raw CSV into the `latest` and `historical` outputs.
+The graph shows the full chain: **source → join → aggregate → derivedColumn → alterRow** into
+the **`latest`** sink, with a parallel branch writing the **`historical`** sink.
+
+![ADF data flow](../images/azurePipeline/dataflow.png)
+
+### Orchestration pipeline (`p3ETLFunction`)
+
+The pipeline runs the data flow and then branches on its outcome. A **Web activity** POSTs a
+JSON payload to a webhook (an Azure Logic App HTTP trigger), which forwards the message to the
+**Microsoft Teams** channel.
+
+**Success path** — on the data flow's success output, `Web1` POSTs
+`{"status":"SUCESSO","message":"Processamento concluido"}`:
+
+![Orchestration success path](../images/azurePipeline/orchestrationSuccess.png)
+
+**Failure path** — on the data flow's failure output, `Web2` POSTs
+`{"status":"FALHA","message":"Falha na Transformação."}`:
+
+![Orchestration failure path](../images/azurePipeline/orchestrationFailure.png)
+
+---
+
+## Notification Details
+
+The notification is sent by a **Web activity** in the orchestration pipeline (one branch for
+success, one for failure), using:
+
+- **Method**: `POST`
+- **URL**: an Azure Logic App HTTP-trigger webhook (which relays to Microsoft Teams)
+- **Authentication**: None (the webhook URL is the secret; keep it out of source — store it
+  as a pipeline parameter / linked-service setting)
+
+**Payloads**
+
+| Branch | Body |
+|--------|------|
+| Success | `{"status":"SUCESSO","message":"Processamento concluido"}` |
+| Failure | `{"status":"FALHA","message":"Falha na Transformação."}` |
 
 ## ️Technical Specifications
 
@@ -58,4 +100,5 @@ The Data Flow follows a "Fan-out" pattern to calculate aggregates and then joins
 To ensure no files are overwritten in the history, the following expression is used:
 ```javascript
 concat('by-timestamp/', toString(currentUTC(), 'yyyy-MM-dd_HHmmssSSS'), '/device-', toString(device_id), '.json')
+```
 

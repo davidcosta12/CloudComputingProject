@@ -1,74 +1,86 @@
 @startuml
+title Part 3 — Dashboard Runtime Flow (React + AWS Cognito + Spring Boot API)
 
-title Dashboard Flow (React + AWS Cognito + API + Processed Data Container)
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Helvetica Neue"
+skinparam defaultFontSize 13
+skinparam roundCorner 10
+skinparam ArrowColor #34495E
+skinparam ArrowThickness 1.1
+skinparam sequence {
+  ParticipantBackgroundColor #34495E
+  ParticipantBorderColor #2C3E50
+  ParticipantFontColor #FFFFFF
+  ParticipantFontStyle bold
+  ActorBackgroundColor #34495E
+  ActorBorderColor #2C3E50
+  LifeLineBorderColor #B0BEC5
+  LifeLineBackgroundColor #ECEFF1
+  GroupBackgroundColor #ECEFF1
+  GroupBorderColor #90A4AE
+  GroupHeaderFontColor #2C3E50
+  DividerBackgroundColor #34495E
+  DividerFontColor #FFFFFF
+}
 
-participant UI as "React UI (Browser)"
-participant API as "Spring Boot API"
+actor User
 
-box "Authentication (AWS Cognito OIDC)" #LightYellow
-participant Cognito as "AWS Cognito (Hosted UI / OIDC)"
+participant UI as "React UI\n(Browser SPA)"
+
+box "AWS" #FFF3E0
+  participant Cognito as "Cognito User Pool\neu-central-1_k4a9qUIbH"
 end box
 
-box "Data Layer" #LightBlue
-participant Processed as "Processed Data Container"
+box "Microsoft Azure" #E3F2FD
+  participant API as "Spring Boot API\n(p3-api)"
+  database DB as "PostgreSQL\nlatest_data / historical_data"
 end box
 
 == Login (OIDC Authorization Code Flow) ==
-UI -> Cognito: 1. Redirect to login (authorize)
-Cognito --> UI: 2. Redirect back to UI (authorization code)
-UI -> Cognito: 3. Token exchange (code -> tokens)
-Cognito --> UI: 4. Tokens issued (id_token / access_token)
+User -> UI: Open app
+UI -> Cognito: 1. signinRedirect (authorize, response_type=code)
+Cognito --> UI: 2. Redirect back with authorization code
+UI -> Cognito: 3. Exchange code for tokens
+Cognito --> UI: 4. id_token + access_token\n(claims: cognito:groups, custom:device_id)
 
 == Dashboard data request ==
-UI -> API: 5. CORS Preflight (OPTIONS /api/dashboard-data)\nOrigin: <ui-origin>\nAccess-Control-Request-Headers: Authorization
-API --> UI: 6. CORS OK (Allow-Origin + Allow-Headers: Authorization)
+UI -> API: 5. OPTIONS /api/dashboard-data (CORS preflight)
+API --> UI: 6. 200 — Allow-Origin + Allow-Headers: Authorization
 
-UI -> API: 7. GET /api/dashboard-data\nAuthorization: Bearer <jwt>
+UI -> API: 7. GET /api/dashboard-data\nAuthorization: Bearer <id_token>
 activate API
+API -> Cognito: 8. Fetch JWKS (cached)
+Cognito --> API: 9. Public keys
+API -> API: 10. Validate JWT (signature + issuer-uri)
+API -> API: 11. Map cognito:groups → ROLE_Admin / ROLE_User\nread custom:device_id
 
-API -> API: 8. Validate JWT (signature/issuer/audience)
-API -> API: 9. Extract claims + authorities/roles
+alt Admin (ROLE_Admin)
+  API -> DB: 12a. latestRepo.findAll() + historicalRepo.findAll()
+  activate DB
+  DB --> API: 13a. all latest[] + historical[]
+  deactivate DB
+  API --> UI: 14a. 200 OK\n{ role:"admin", latest:[...], historical:[...] }
 
-alt Admin user
-  API -> Processed: 10A. Fetch latest data (all devices)
-  activate Processed
-  Processed --> API: 11A. latest[]
-  deactivate Processed
+else User with custom:device_id
+  API -> DB: 12b. latestRepo.findById(deviceId)\nhistoricalRepo.findByDeviceId(deviceId)
+  activate DB
+  DB --> API: 13b. latest (0..1) + historical[]
+  deactivate DB
+  API --> UI: 14b. 200 OK\n{ role:"user", device_id, latest:[...], historical:[...] }
 
-  API -> Processed: 12A. Fetch historical data (all devices)
-  activate Processed
-  Processed --> API: 13A. historical[]
-  deactivate Processed
-
-  API --> UI: 14A. 200 OK\n{ role: "admin", latest: [...], historical: [...] }
-
-else Standard user with device claim
-  API -> API: 10B. Extract device_id from token claims
-
-  API -> Processed: 11B. Fetch latest by device_id
-  activate Processed
-  Processed --> API: 12B. latest (0..1)
-  deactivate Processed
-
-  API -> Processed: 13B. Fetch historical by device_id
-  activate Processed
-  Processed --> API: 14B. historical[]
-  deactivate Processed
-
-  API --> UI: 15B. 200 OK\n{ role: "user", device_id: "...", latest: [...], historical: [...] }
-
-else Missing device claim
-  API --> UI: 16C. 403 Forbidden\nAccess denied (missing device claim)
+else User without device claim
+  API --> UI: 14c. 403 Forbidden\n(missing custom:device_id)
 end
-
 deactivate API
 
-== UI rendering ==
-UI -> UI: 17. Transform API data for table + charts
-UI -> UI: 18. Render Dashboard components
+== Rendering ==
+UI -> UI: 15. dataProcessor → table + line/bar charts
+UI -> User: 16. Render Energy Analytics Dashboard
 
 == Logout (OIDC) ==
-UI -> Cognito: 19. Logout redirect
-Cognito --> UI: 20. Redirect back to UI (post_logout_redirect_uri)
+User -> UI: Click "Sair"
+UI -> Cognito: 17. signoutRedirect (revoke tokens)
+Cognito --> UI: 18. Redirect to post_logout_redirect_uri
 
 @enduml

@@ -1,0 +1,72 @@
+@startuml
+title Part 1 — CI/CD Deployment Flow (GitHub Actions → Azure App Service)
+
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontName "Helvetica Neue"
+skinparam defaultFontSize 13
+skinparam roundCorner 10
+skinparam ArrowColor #34495E
+skinparam ArrowThickness 1.1
+skinparam sequence {
+  ParticipantBackgroundColor #34495E
+  ParticipantBorderColor #2C3E50
+  ParticipantFontColor #FFFFFF
+  ParticipantFontStyle bold
+  ActorBackgroundColor #34495E
+  ActorBorderColor #2C3E50
+  LifeLineBorderColor #B0BEC5
+  LifeLineBackgroundColor #ECEFF1
+  GroupBackgroundColor #ECEFF1
+  GroupBorderColor #90A4AE
+  GroupHeaderFontColor #2C3E50
+  DividerBackgroundColor #34495E
+  DividerFontColor #FFFFFF
+}
+
+actor Developer as Dev
+
+box "GitHub" #ECEFF1
+  participant Repo as "Repository\n(branch: main)"
+  participant GHA as "GitHub Actions"
+end box
+
+box "Microsoft Azure" #E3F2FD
+  participant UI as "App Service\np3-ui (React)"
+  participant API as "App Service\np3-api (Spring Boot)"
+end box
+
+Dev -> Repo: 1. git push (main)
+activate Repo
+Repo -> GHA: 2. Trigger workflows (on: push / workflow_dispatch)
+deactivate Repo
+activate GHA
+
+par Backend pipeline — main_erasmus-cc2025-api.yml
+  GHA -> GHA: 3a. Setup Java 21 (microsoft)
+  GHA -> GHA: 4a. mvn clean package -DskipTests
+  GHA -> GHA: 5a. Rename fat JAR → app.jar + upload artifact
+  GHA -> API: 6a. azure/login (secret: AZURE_CREDENTIALS)\nwebapps-deploy app.jar
+  activate API
+  API --> GHA: 7a. Deployed (Production slot)
+  deactivate API
+else Frontend pipeline — main_erasmus-cc2025-ui.yml
+  GHA -> GHA: 3b. Setup Node.js 20.x
+  GHA -> GHA: 4b. npm install
+  GHA -> GHA: 5b. npm run build\n(REACT_APP_API_URL=https://p3-api.azurewebsites.net) → zip
+  GHA -> UI: 6b. webapps-deploy node-release.zip\n(secret: AZURE_PUBLISHPROFILE)
+  activate UI
+  UI --> GHA: 7b. Deployed (Production slot)
+  deactivate UI
+end
+
+GHA --> Dev: 8. Workflow status (success / failure)
+deactivate GHA
+
+note over UI, API
+  Both services are reachable online afterwards:
+  UI  → https://p3-ui.azurewebsites.net
+  API → https://p3-api.azurewebsites.net
+end note
+
+@enduml
